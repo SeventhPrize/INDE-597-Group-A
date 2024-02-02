@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 import random
 import numpy as np
+import structlog
+from typing import List, Tuple
+
+logger = structlog.get_logger()
 
 class Game(ABC):
     '''
@@ -96,7 +100,7 @@ class DynamicProgram:
         INPUT
             game; the associated game object
         '''
-        self.game = game
+        self.game: Game = game
 
     def policy_evaluation(self, policy, tol=1.0, disc=1.0):
         '''
@@ -209,7 +213,39 @@ class DynamicProgram:
             stable = self.policy_improvement(policy, value, disc)
         return policy
 
+    def value_iteration(self, threshold, gamma=1.0):
+        '''
+        Executes value iteration
+        INPUT
+            threshold; optimality tolerance
+        RETURNS
+            best deterministic policy
+        '''
 
+        def estimate_state_value(state_reward_pr: Tuple[List[Tuple[int, float]], List[float]]):
+            ([(s_next, r)], [pr]) = state_reward_pr
+            return pr * (r + gamma * V[s_next])
+
+        # Initialize value function
+        V = {**{0: 0}, **{st: random.randint(-100, -1) for st in self.game.states[1:]}}
+
+        # Set delta to high number
+        delta = np.inf
+
+        # While change in value function is high, loop
+        while delta > threshold:
+            delta = 0
+
+            # Compute new values for each state
+            for st in self.game.states[1:]:
+                v = V[st]
+                V[st] = max(estimate_state_value(self.game.get_state_and_reward(st, a)) for a in self.game.actions[st])
+                delta = max(delta, abs(v - V[st]))
+                #logger.info("Value Iteration", st=st, v=V[st], delta=delta, V=V)
+
+        # Construct policy
+        return {**{0: {}}, **{st: {self.game.actions[st][np.argmax([estimate_state_value(self.game.get_state_and_reward(st, a)) for a in self.game.actions[st]])]: 1}
+                for st in self.game.states[1:]}}
             
 
 
@@ -224,9 +260,15 @@ print(value)
 # Policy iteration
 
 # Construct arbitrary terminable policy: go left until you leftmost column, then go up
-pol = {st : {"L": 1} for st in gw.states}
+pol = {st: {"L": 1} for st in gw.states}
 for st in [4, 8, 12]:
     pol[st] = {"U": 1}
 pol[0] = {}
-best_pol = dp.policy_iteration(pol, tol=0)
-print(best_pol)
+tol = 0
+best_pol = dp.policy_iteration(pol, tol=tol)
+logger.info("Policy Iteration", tol=tol, best_pol=best_pol, value=dp.policy_evaluation(best_pol, tol=tol))
+
+threshold, gamma = 0.0001, 1.
+best_pol = dp.value_iteration(threshold, gamma)
+value = dp.policy_evaluation(best_pol, tol=0)
+logger.info("Value Iteration", threshol=threshold, gamma=gamma, best_pol=best_pol, value=value)
