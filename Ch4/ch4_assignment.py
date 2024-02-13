@@ -92,23 +92,27 @@ class DynamicProgram:
     '''
     Implements policy evaluation, policy iteration, and value iteration.
     '''
-    game = None     # the game associated with this Dynamic Program object
+    game = None     # Game associated with this Dynamic Program object
+    gamma = 1.0     # Discount rate
+    tol = 0.0       # Optimality tolerance
 
-    def __init__(self, game):
+    def __init__(self, game, gamma=1.0, tol=0.0):
         '''
         Initializes this object
         INPUT
             game; the associated game object
+            gamma; discount rate between 0 and 1; 1 implies undiscounted model
+            tol; optimality tolerance
         '''
         self.game: Game = game
+        self.gamma = gamma
+        self.tol = tol
 
-    def policy_evaluation(self, policy, tol=1.0, disc=1.0):
+    def policy_evaluation(self, policy):
         '''
         Executes policy evaluation
         INPUT
             policy; dictionary mapping each state to a dictionary that maps each action to the probability of selecting that action
-            tol; optimality tolerance
-            disc; discount rate
         RETURNS
             disctionary mapping each state to its value function under given policy
         '''
@@ -116,10 +120,10 @@ class DynamicProgram:
         value = {st: 0 for st in self.game.states}
         
         # Set delta to high number
-        delta = tol + 1
+        delta = self.tol + 1
 
         # While change in value function is high, loop
-        while delta > tol:
+        while delta > self.tol:
             delta = 0
 
             # Store old values for computing change in values this iteration
@@ -139,7 +143,7 @@ class DynamicProgram:
                     for state_reward, prob_state_reward in zip(state_reward_list, prob_state_reward_list):
 
                         # Compute contribution to the value function
-                        value[st] += prob_act * prob_state_reward * (state_reward[1] + disc * old_value[state_reward[0]])
+                        value[st] += prob_act * prob_state_reward * (state_reward[1] + self.gamma * old_value[state_reward[0]])
                 
                 # Compute change in this state's value function
                 delta = max(delta, abs(old_value[st] - value[st]))
@@ -191,15 +195,13 @@ class DynamicProgram:
 
         return stable
     
-    def policy_iteration(self, policy, tol=1.0, disc=1.0):
+    def policy_iteration(self, policy):
         '''
         Executes policy iteration.
         Given a base policy, repeatedly performs evaluation and improvement until no improvement can be made.
         Assumes the base policy is deterministic, where each state is mapped only to a singleton dictionary that maps the selected action to probability 1
         INPUT
             policy; dictionary mapping each state to a singleton dictionary, which maps a single action to 1
-            tol; optimality tolerance for evaluation
-            disc; discount rate
         RETURNS 
             best deterministic policy
         '''
@@ -209,22 +211,20 @@ class DynamicProgram:
         # Repeatedly evaluate and improve until no improvement is possible
         stable = False
         while not stable:
-            value = self.policy_evaluation(policy, tol, disc)
-            stable = self.policy_improvement(policy, value, disc)
+            value = self.policy_evaluation(policy)
+            stable = self.policy_improvement(policy, value)
         return policy
 
-    def value_iteration(self, threshold, gamma=1.0):
+    def value_iteration(self):
         '''
         Executes value iteration
-        INPUT
-            threshold; optimality tolerance
         RETURNS
             best deterministic policy
         '''
 
         def estimate_state_value(state_reward_pr: Tuple[List[Tuple[int, float]], List[float]]):
             ([(s_next, r)], [pr]) = state_reward_pr
-            return pr * (r + gamma * V[s_next])
+            return pr * (r + self.gamma * V[s_next])
 
         # Initialize value function
         V = {**{0: 0}, **{st: random.randint(-100, -1) for st in self.game.states[1:]}}
@@ -233,7 +233,7 @@ class DynamicProgram:
         delta = np.inf
 
         # While change in value function is high, loop
-        while delta > threshold:
+        while delta > self.tol:
             delta = 0
 
             # Compute new values for each state
@@ -254,7 +254,7 @@ dp = DynamicProgram(gw)
 
 # Equiprobable random policy evaluation
 erp = gw.make_equiprobable_random_policy()
-value = dp.policy_evaluation(erp, tol=0)
+value = dp.policy_evaluation(erp)
 print(value)
 
 # Policy iteration
@@ -265,10 +265,13 @@ for st in [4, 8, 12]:
     pol[st] = {"U": 1}
 pol[0] = {}
 tol = 0
-best_pol = dp.policy_iteration(pol, tol=tol)
-logger.info("Policy Iteration", tol=tol, best_pol=best_pol, value=dp.policy_evaluation(best_pol, tol=tol))
+dp.tol = tol
+best_pol = dp.policy_iteration(pol)
+logger.info("Policy Iteration", tol=tol, best_pol=best_pol, value=dp.policy_evaluation(best_pol))
 
 threshold, gamma = 0.0001, 1.
-best_pol = dp.value_iteration(threshold, gamma)
-value = dp.policy_evaluation(best_pol, tol=0)
-logger.info("Value Iteration", threshol=threshold, gamma=gamma, best_pol=best_pol, value=value)
+dp.tol = threshold
+dp.gamma = gamma
+best_pol = dp.value_iteration()
+value = dp.policy_evaluation(best_pol)
+logger.info("Value Iteration", threshold=threshold, gamma=gamma, best_pol=best_pol, value=value)
