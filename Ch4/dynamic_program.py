@@ -153,10 +153,8 @@ class DynamicProgram:
         # Initialize value function
         value = {st: 0 for st in self.game.states}
         
-        # Set delta to high number
-        delta = self.tol + 1
-
         # While change in value function is high, loop
+        delta = np.inf
         while delta > self.tol:
             delta = 0
 
@@ -165,6 +163,8 @@ class DynamicProgram:
 
             # Compute new values for each state
             for st in self.game.states:
+                if self.game.is_done(st):
+                    continue
                 value[st] = 0
                 for act in policy[st].keys():
                     value[st] += policy[st][act] * self.action_evaluation(st, act, old_value)
@@ -240,17 +240,11 @@ class DynamicProgram:
         RETURNS
             best deterministic policy
         '''
-        # def estimate_state_value(state_reward_pr: Tuple[List[Tuple[int, float]], List[float]]):
-        #     ([(s_next, r)], [pr]) = state_reward_pr
-        #     return pr * (r + self.gamma * V[s_next])
-
         # Initialize value function
-        V = {**{0: 0}, **{st: random.randint(-100, -1) for st in self.game.states[1:]}}
-
-        # Set delta to high number
-        delta = np.inf
+        V = {st: 0 for st in self.game.states}
 
         # While change in value function is high, loop
+        delta = np.inf
         while delta > self.tol:
             delta = 0
 
