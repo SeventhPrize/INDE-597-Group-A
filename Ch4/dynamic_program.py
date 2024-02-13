@@ -44,7 +44,6 @@ class GridWorld(Game):
     '''
     Implements the GridWorld game
     '''
-
     def __init__(self):
         '''
         Initializes this object to contain states 1-14 with absorbing state 0
