@@ -1,27 +1,50 @@
 from abc import ABC, abstractmethod
 import random
 import numpy as np
-import structlog
 from typing import List, Tuple
-
-logger = structlog.get_logger()
 
 class Game(ABC):
     '''
     Abstract interface for general games
     '''
     states = []     # list of states
-    actions = {}    # dictionary mapping each state to a list of possible actions
+    actions = {}    # dictionary mapping each state to a list of possible actions. empty list implies terminal state.
 
     @abstractmethod
     def get_state_and_reward(self, oldstate, action):
         '''
         Given the current state and an action, outputs two parallel lists describing potential outcomes
+        INPUT
+            oldstate; the state before the action was taken
+            action; the taken action
         RETURNS
-            list of 2-tuples, where the first tuple element is the potential next state and second tuple element is the potential reward
+            list of 2-tuples, where the 0th element is the potential next state and 1th element is the potential reward
             list of probabilities of achieving the associated state and reward
         '''
         pass
+
+    @abstractmethod
+    def make_states(self):
+        '''
+        Makes the list of states for this game
+        '''
+        pass
+
+    @abstractmethod
+    def make_actions(self):
+        '''
+        Makes the dictionary mapping states to list of possible actions
+        Assumes self.states has been constructed prior to calling make_actions 
+        Maps a state to empty list if it is a terminal state
+        '''
+        pass
+
+    def __init__(self):
+        '''
+        Initializes this game by making the states and the actions
+        '''
+        self.make_states()
+        self.make_actions()
 
     def make_equiprobable_random_policy(self):
         '''
@@ -39,54 +62,44 @@ class Game(ABC):
             for act in self.actions[st]:
                 policy[st][act] = 1 / n_act
         return policy
-
-class GridWorld(Game):
-    '''
-    Implements the GridWorld game
-    '''
-    def __init__(self):
+    
+    def is_done(self, state):
         '''
-        Initializes this object to contain states 1-14 with absorbing state 0
-        Intiializes UDLR actions for all states except absorbing state 0 
-        '''
-        self.states = list(range(15))
-        self.actions = {st : ["U", "D", "L", "R"] for st in self.states}
-        self.actions[0] = []
-
-    def get_state_and_reward(self, oldstate, action):
-        '''
-        Given the current state and an action, returns two parallel lists describing the outcome
-        For GridWorld, the lists are all length 1 because the actions all have deterministic outcome
+        Checks if given state is terminal
+        INPUT
+            state; a state
         RETURNS
-            list of 2-tuples, where the first tuple element is the potential next state and second tuple element is the potential reward
-            list of probabilities of achieving the associated state and reward
+            True if state is terminal, else False
         '''
-        if action not in self.actions[oldstate]:
-            raise Exception("Impossible action.")
-        
-        # Check if UP is valid move
-        if action == "U":
-            if oldstate >= 4:
-                return [((oldstate - 4) % 15, -1)], [1]
-        
-        # Check if DOWN is valid move
-        if action == "D":
-            if oldstate <= 11:
-                return [((oldstate + 4) % 15, -1)], [1]
-        
-        # Check if RIGHT is valid move
-        if action == "R":
-            if oldstate % 4 <= 2:
-                return [((oldstate + 1) % 15, -1)], [1]
-        
-        # Check if LEFT is valid move
-        if action == "L":
-            if oldstate % 4 >= 1:
-                return [((oldstate - 1) % 15, -1)], [1]
-            
-        # If move would go off board, then stay where you are
-        return [(oldstate, -1)], [1]
-        
+        return (len(self.actions[state]) == 0)
+    
+    def sample_policy_action(self, state, policy=None):
+        '''
+        Returns a sample of an action to perform at this state
+        INPUT
+            state; the current state
+            policy; dictionary mapping each state to a dictionary that maps each action to the probability of selecting that action
+                if None, assumes equiprobable random policy
+        RETURNS
+            an action determined by the policy; if terminal state, returns None
+        '''
+        # If no policy is provided, sample at random
+        if policy is None:
+            return np.random.choice(a=self.actions[state])
+
+        # Get list of valid actions
+        actions = list(policy[state].keys())
+
+        # If terminal state, return None
+        if len(actions) == 0:
+            return None
+
+        # Sample policy
+        probs = [policy[state][act]
+                    for act in actions]
+        return np.random.choice(a=actions, p=probs)
+
+
 class DynamicProgram:
     '''
     Implements policy evaluation, policy iteration, and value iteration.
@@ -106,6 +119,28 @@ class DynamicProgram:
         self.game: Game = game
         self.gamma = gamma
         self.tol = tol
+
+    def action_evaluation(self, state, action, value):
+        '''
+        Evaluates a given action at a current state
+        INPUT
+            state; current state
+            action; intended action
+            value; dictionary mapping each state to its value
+        RETURNS
+            value of the action at the currrent state under the given value mapping
+        '''
+        # Initialize
+        action_value = 0
+
+        # Get action outcomes
+        state_reward_list, prob_state_reward_list = self.game.get_state_and_reward(state, action)
+        
+        # Compute value of each outcome
+        for state_reward, prob_state_reward in zip(state_reward_list, prob_state_reward_list):
+            action_value += prob_state_reward * (state_reward[1] + self.gamma * value[state_reward[0]])
+
+        return action_value
 
     def policy_evaluation(self, policy):
         '''
@@ -130,88 +165,73 @@ class DynamicProgram:
 
             # Compute new values for each state
             for st in self.game.states:
-
                 value[st] = 0
-                
-                # Sum over actions
                 for act in policy[st].keys():
-                    prob_act = policy[st][act]  # probability of selecting the action given the current state
-
-                    # Get potential action outcomes
-                    state_reward_list, prob_state_reward_list = self.game.get_state_and_reward(st, act)
-                    for state_reward, prob_state_reward in zip(state_reward_list, prob_state_reward_list):
-
-                        # Compute contribution to the value function
-                        value[st] += prob_act * prob_state_reward * (state_reward[1] + self.gamma * old_value[state_reward[0]])
+                    value[st] += policy[st][act] * self.action_evaluation(st, act, old_value)
                 
                 # Compute change in this state's value function
                 delta = max(delta, abs(old_value[st] - value[st]))
         return value   
 
-    def policy_improvement(self, policy, value, disc=1.0):
+    def policy_improvement(self, value, policy=None):
         '''
-        Mutates and improves the given policy
+        Improves the given policy
         Assumes the given policy is deterministic: each state maps to a dictionary containing, as the only key, the best action which maps to 1
         INPUT
-            policy; dictionary mapping each state to a singleton dictionary, which maps a single action to 1
             value; evaluation of the given policy as a dictionary mapping each state to its value
-            disc; discount rate
+            policy; dictionary mapping each state to a singleton dictionary, which maps a single action to 1
+                if None, returns false stability flag
         RETURNS
-            true if no improvements could be made; else false
+            new policy; a greedily improved policy
+            stable; true if no improvements could be made; else false
         '''
-        stable = True
-        
-        # For each state, greedily select best action
+        # Greedily find new policy
+        new_policy = {st: ({self.game.actions[st][np.argmax([self.action_evaluation(st, act, value) for act in self.game.actions[st]])]: 1}
+                        if not self.game.is_done(st) else {})
+                        for st in self.game.states}
+
+        # If no base policy was provided, return unstable
+        if policy is None:
+            return new_policy, False
+
+        # If policy states do not align, return unstable
+        if policy.keys() != new_policy.keys():
+            return new_policy, False
+
+        # Check for policy stability under each state
         for st in self.game.states:
 
-            # If absorbing state, continue
-            if len(self.game.actions[st]) == 0:
-                continue
-
-            # Record the old action and trackers for new action
-            old_action = list(policy[st].keys())[0]
-            best_action = None
-            best_action_value = float('-inf')
-
-            # For each action, calculate the value of that action
-            for act in self.game.actions[st]:
-                action_value = 0
-                state_reward_list, prob_state_reward_list = self.game.get_state_and_reward(st, act)
-                for state_reward, prob_state_reward in zip(state_reward_list, prob_state_reward_list):
-
-                    # Compute contribution to the value function
-                    action_value += prob_state_reward * (state_reward[1] + disc * value[state_reward[0]])
-
-                # Track if new best action is found
-                if action_value > best_action_value:
-                    best_action = act
-                    best_action_value = action_value      
+            # If policy actions to not align, return unstable
+            if policy[st].keys() != new_policy[st].keys():
+                return new_policy, False
             
-            # Update action
-            if old_action != best_action:
-                stable = False                      
-            policy[st] = {best_action: 1}
-
-        return stable
+            # If policy action probablity do not align, return unstable
+            for act in policy[st]:
+                if policy[st][act] != new_policy[st][act]:
+                    return new_policy, False
+                
+        # Return stable
+        return new_policy, True
     
-    def policy_iteration(self, policy):
+    def policy_iteration(self, policy=None):
         '''
         Executes policy iteration.
         Given a base policy, repeatedly performs evaluation and improvement until no improvement can be made.
-        Assumes the base policy is deterministic, where each state is mapped only to a singleton dictionary that maps the selected action to probability 1
         INPUT
             policy; dictionary mapping each state to a singleton dictionary, which maps a single action to 1
+                if None, uses the equiprobable random policy as the base policy
         RETURNS 
             best deterministic policy
         '''
-        # Copy policy
-        policy = policy.copy()
+        # Default policy to equiprobable random policy
+        if policy is None:
+            policy = self.game.make_equiprobable_random_policy()
 
         # Repeatedly evaluate and improve until no improvement is possible
         stable = False
         while not stable:
             value = self.policy_evaluation(policy)
-            stable = self.policy_improvement(policy, value)
+            policy, stable = self.policy_improvement(value, policy)
         return policy
 
     def value_iteration(self):
@@ -220,10 +240,9 @@ class DynamicProgram:
         RETURNS
             best deterministic policy
         '''
-
-        def estimate_state_value(state_reward_pr: Tuple[List[Tuple[int, float]], List[float]]):
-            ([(s_next, r)], [pr]) = state_reward_pr
-            return pr * (r + self.gamma * V[s_next])
+        # def estimate_state_value(state_reward_pr: Tuple[List[Tuple[int, float]], List[float]]):
+        #     ([(s_next, r)], [pr]) = state_reward_pr
+        #     return pr * (r + self.gamma * V[s_next])
 
         # Initialize value function
         V = {**{0: 0}, **{st: random.randint(-100, -1) for st in self.game.states[1:]}}
@@ -236,41 +255,15 @@ class DynamicProgram:
             delta = 0
 
             # Compute new values for each state
-            for st in self.game.states[1:]:
+            for st in self.game.states:
+                if self.game.is_done(st):
+                    continue
                 v = V[st]
-                V[st] = max(estimate_state_value(self.game.get_state_and_reward(st, a)) for a in self.game.actions[st])
+                V[st] = max(self.action_evaluation(st, act, V) for act in self.game.actions[st])
                 delta = max(delta, abs(v - V[st]))
-                #logger.info("Value Iteration", st=st, v=V[st], delta=delta, V=V)
 
         # Construct policy
-        return {**{0: {}}, **{st: {self.game.actions[st][np.argmax([estimate_state_value(self.game.get_state_and_reward(st, a)) for a in self.game.actions[st]])]: 1}
-                for st in self.game.states[1:]}}
+        return {st: ({self.game.actions[st][np.argmax([self.action_evaluation(st, act, V) for act in self.game.actions[st]])]: 1}
+                if not self.game.is_done(st) else {})
+                for st in self.game.states}
             
-
-
-gw = GridWorld()
-dp = DynamicProgram(gw)
-
-# Equiprobable random policy evaluation
-erp = gw.make_equiprobable_random_policy()
-value = dp.policy_evaluation(erp)
-print(value)
-
-# Policy iteration
-
-# Construct arbitrary terminable policy: go left until you leftmost column, then go up
-pol = {st: {"L": 1} for st in gw.states}
-for st in [4, 8, 12]:
-    pol[st] = {"U": 1}
-pol[0] = {}
-tol = 0
-dp.tol = tol
-best_pol = dp.policy_iteration(pol)
-logger.info("Policy Iteration", tol=tol, best_pol=best_pol, value=dp.policy_evaluation(best_pol))
-
-threshold, gamma = 0.0001, 1.
-dp.tol = threshold
-dp.gamma = gamma
-best_pol = dp.value_iteration()
-value = dp.policy_evaluation(best_pol)
-logger.info("Value Iteration", threshold=threshold, gamma=gamma, best_pol=best_pol, value=value)
