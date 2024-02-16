@@ -1,11 +1,16 @@
+import gymnasium
 import gymnasium as gym
-from gymnasium.spaces import Tuple, Discrete
+from gymnasium.spaces import Tuple, Discrete, MultiDiscrete
 import matplotlib.pyplot as plt
-import numpy as np
 import itertools
 from matplotlib.animation import FuncAnimation
 from IPython.display import HTML
+
+from Ch4.tic_tac_toe import TicTacToeEnv
 from dynamic_program import Game, DynamicProgram
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 class ToyTextGym(Game):
     '''
@@ -28,16 +33,17 @@ class ToyTextGym(Game):
     def unpack_space(self, space):
         '''
         Unpacks the given Gymnasium space for purposes of enumerating states/actions
-        Assumes the space is a Discrete object or a Tuple of Discrete objects
+        Assumes the space is a Discrete object, a Tuple of Discrete objects or a MultiDiscrete object
         INPUT
-            space; Gymnasium Discrete or Tuple of Discretes
+            space; Gymnasium Discrete, Tuple of Discrete or MultiDiscrete object
         RETURNS
             enumeration of all items in the space
         '''
+
         # If Discrete, return list of integers within Discrete
         if isinstance(space, Discrete):
             return list(range(space.n))
-        
+
         # If Tuple, return cartesian product of Discrete bounds
         elif isinstance(space, Tuple):
 
@@ -45,12 +51,13 @@ class ToyTextGym(Game):
             for elm in space:
                 if not isinstance(elm, Discrete):
                     raise TypeError("Gymnasium Tuple contains types other than Discrete")
-            
+
             # Return cartesian product of Discrete bounds
             return list(itertools.product(*[range(elm.n) for elm in space]))
-        
-        # Raise error
-        raise TypeError("Gymnasium space is not a Tuple nor a Discrete")
+        elif isinstance(space, MultiDiscrete):
+            return list(itertools.product(*[range(n) for n in space.nvec]))
+
+        raise TypeError("Gymnasium space is not Discrete, Tuple of Discrete, or MultiDiscrete")
 
     def make_states(self):
         '''
@@ -65,7 +72,7 @@ class ToyTextGym(Game):
         # Make actions
         actions = self.unpack_space(self.env.action_space)
         self.actions = {st: actions for st in self.states}
-        
+
         # For each action that leads to a termination, record the terminal state
         for st in self.states:
             for act in self.actions[st]:
@@ -114,15 +121,18 @@ class ToyTextGym(Game):
         RETURNS
             animation frames as list of renderings
         '''
+
+        elem_to_list = lambda r: r if type(r) == list else [r]
+
         # Reset and initialize
         state = self.reset_env()
-        frames = [self.env.render()]
+        frames = elem_to_list(self.env.render())
 
         # Sample actions from the policy until a terminal state is reached
         while not self.is_done(state):
             action = self.sample_policy_action(state, policy)
             state, _, _, _, _ = self.env.step(action)
-            frames.append(self.env.render())
+            frames.extend(elem_to_list(self.env.render()))
 
         # Make figure for animation
         fig, ax = plt.subplots()
@@ -137,22 +147,27 @@ class ToyTextGym(Game):
         ani = FuncAnimation(fig, update,
                             frames=frames,
                             blit=False,
-                            interval=50,
-                            repeat_delay=500)
+                            interval=500,
+                            repeat_delay=3000)
         plt.show()
         # HTML(ani.to_html5_video())                
 
 def toy_text_experiment(mdl_name, n_animations=1):
-    env = gym.make(mdl_name, render_mode="rgb_array")
+    if mdl_name == "Tic-Tac-Toe-v0":
+        env = TicTacToeEnv(render_mode="rgb_array")
+    else:
+        env = gym.make(mdl_name, render_mode="rgb_array")
     game = ToyTextGym(env)
     dp = DynamicProgram(game)    
-    dp.tol = 0.01
+    dp.tol = 0.000001
     pol = dp.value_iteration()
     for _ in range(n_animations):
         game.policy_animation(pol)
 
 for mdl in ["FrozenLake-v1",
-            # "Blackjack-v1",
-            "CliffWalking-v0",
-            "Taxi-v3"]:
+             # "Blackjack-v1",
+             "CliffWalking-v0",
+             "Taxi-v3",
+             "Tic-Tac-Toe-v0"]:
     toy_text_experiment(mdl, 3)
+
