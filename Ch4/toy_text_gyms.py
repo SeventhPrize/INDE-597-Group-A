@@ -163,6 +163,7 @@ def toy_text_experiment(mdl_name, n_animations=1):
     pol = dp.value_iteration()
     for _ in range(n_animations):
         game.policy_animation(pol)
+    return pol
 
 for mdl in ["FrozenLake-v1",
              # "Blackjack-v1",
