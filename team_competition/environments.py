@@ -1,21 +1,24 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import Sequence
 import random
 
-class GenericEnvironment(ABC):
+class EnvironmentVersus(ABC):
     '''
     Interface for a team-vs-team environment
     '''
     agents = tuple()        # 2-tuple of agents
-    current_state = None    # current state of this environment
 
-    def __init__(self, agents:Tuple):
+    def __init__(self, agents:Sequence):
         '''
         Initializes this environment by setting the agents
+        INPUT
+            2-length list/tuple/set of agents
         '''
+        # Check for two agents
         if len(agents) != 2:
             raise Exception("Expected 2 agents.")
         
+        # Set agents
         self.agents = tuple(agents)
         for agent in self.agents:
             agent.associate_environment(self)
@@ -41,7 +44,7 @@ class GenericEnvironment(ABC):
             2: boolean flag whether the environment has terminated
             3: the index of the agent whose turn it is
         '''
-        return None, 0, False
+        return None, 0, False, None
 
     @abstractmethod
     def reset(self):
@@ -90,33 +93,32 @@ class GenericEnvironment(ABC):
                 The last element is the final state, given as (final_state, None, None, None)
             rewards; 2-length list of each agent's final rewards
         '''
+        # Initialize
         episode_path = []
         rewards = [0, 0]
         agent_ind = first_agent_ind
         state = self.reset()
+
+        # Until done, make steps and record action
         while True:
+
+            # Make state interpretable to the agent whose turn it is
             reinterpret_state = self.reinterpret_state_for_agent(state, agent_ind)
+            
+            # Get agent's action
             action = self.agents[agent_ind].compute_action(reinterpret_state, agent_ind)
+            
+            # Get outcome
             next_state, reward, done, next_agent_ind = self.step()
             episode_path.append((state, action, reward, agent_ind))
             rewards[agent_ind] += reward
             state = next_state
             agent_ind = next_agent_ind
+
+            # Check termination
             if done:
                 episode_path.append((state, None, None, None))
                 return episode_path, rewards
-
-class GenericTabularEnvironment(GenericEnvironment):
-    '''
-    Interface for a team-vs-team environment
-    that has an enumerable state space
-    '''
-    @abstractmethod
-    def get_states(self):
-        '''
-        RETURNS iterable of all states
-        '''
-        return tuple()
     
 class Agent(ABC):
     '''
@@ -134,7 +136,7 @@ class Agent(ABC):
         '''
         return None
 
-    def associate_environment(self, env:GenericEnvironment):
+    def associate_environment(self, env:EnvironmentVersus):
         '''
         Assigns an environment to this agent
         '''
