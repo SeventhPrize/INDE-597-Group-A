@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Sequence
+from typing import Sequence, List, Tuple
 import random
 
 class EnvironmentVersus(ABC):
@@ -7,6 +7,7 @@ class EnvironmentVersus(ABC):
     Interface for a team-vs-team environment
     '''
     agents = tuple()        # 2-tuple of agents
+    current_state = None    # current state
 
     def __init__(self, agents:Sequence):
         '''
@@ -73,14 +74,14 @@ class EnvironmentVersus(ABC):
             the state reinterpreted for the agent
         '''
         return None
-    
+        
     @abstractmethod
     def render(self, state):
         '''
         RETURNS figure of the current state
         '''
         return None
-
+    
     def play_game(self, first_agent_ind:int=random.randint(0, 1)):
         '''
         Plays the game and outputs the episode path
@@ -95,6 +96,7 @@ class EnvironmentVersus(ABC):
         '''
         # Initialize
         episode_path = []
+        individual_paths = [[][]]
         rewards = [0, 0]
         agent_ind = first_agent_ind
         state = self.reset()
@@ -111,15 +113,25 @@ class EnvironmentVersus(ABC):
             # Get outcome
             next_state, reward, done, next_agent_ind = self.step()
             episode_path.append((state, action, reward, agent_ind))
+            individual_paths[agent_ind].append((self.reinterpret_state_for_agent(state, agent_ind), action, reward))
             rewards[agent_ind] += reward
             state = next_state
             agent_ind = next_agent_ind
 
-            # Check termination
+            # Add termination state
             if done:
-                episode_path.append((state, None, None, None))
+                episode_path.append((state, None, 0, None))
+                for agent_ind in range(len(self.agents)):
+                    individual_paths.append((self.reinterpret_state_for_agent(state, agent_ind), action, 0))
+
+            # Show history to agents
+            for agent_ind, agent in enumerate(self.agents):
+                agent.see_history(individual_paths[agent_ind])
+
+            # Terminate
+            if done:
                 return episode_path, rewards
-    
+            
 class Agent(ABC):
     '''
     Interface for a game agent
@@ -127,7 +139,7 @@ class Agent(ABC):
     env = None  # the environment associated with this agent
 
     @abstractmethod
-    def compute_action(self, state):
+    def play(self, state):
         '''
         INPUT
             state; the current state
@@ -141,3 +153,14 @@ class Agent(ABC):
         Assigns an environment to this agent
         '''
         self.env = env
+
+    def see_history(self, history:List):
+        '''
+        Processes given history
+        INPUT
+            history; list of 3-tuples of structure
+                0: state
+                1: action
+                2: reward
+        '''
+        pass

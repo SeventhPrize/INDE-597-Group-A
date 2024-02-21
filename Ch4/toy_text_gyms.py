@@ -165,10 +165,10 @@ def toy_text_experiment(mdl_name, n_animations=1):
         game.policy_animation(pol)
     return pol
 
-for mdl in ["FrozenLake-v1",
+for mdl in [#"FrozenLake-v1",
              # "Blackjack-v1",
-             "CliffWalking-v0",
-             "Taxi-v3",
+             #"CliffWalking-v0",
+             #"Taxi-v3",
              "Tic-Tac-Toe-v0"]:
     toy_text_experiment(mdl, 3)
 

@@ -61,7 +61,7 @@ class TicTacToeEnv(gym.Env):
         RETURNS
             dictionary that maps each state to a dictionary that maps each action to a list of tuples
         """
-
+        breakpoint()
         try:
             # If the dictionary has been pickled, load it to save time
             logger.info("Loading state_action_to_update_function.pkl")
