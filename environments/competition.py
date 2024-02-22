@@ -1,25 +1,21 @@
 from abc import ABC, abstractmethod
 from typing import Sequence, List, Tuple
+from collections.abc import Hashable
 import random
 
 class EnvironmentVersus(ABC):
     '''
     Interface for a team-vs-team environment
     '''
-    agents = tuple()        # 2-tuple of agents
+    agents = tuple()        # tuple of agents
     current_state = None    # current state
 
     def __init__(self, agents:Sequence):
         '''
         Initializes this environment by setting the agents
         INPUT
-            2-length list/tuple/set of agents
-        '''
-        # Check for two agents
-        if len(agents) != 2:
-            raise Exception("Expected 2 agents.")
-        
-        # Set agents
+            list/tuple of agents
+        '''        
         self.agents = tuple(agents)
         for agent in self.agents:
             agent.associate_environment(self)
@@ -57,14 +53,7 @@ class EnvironmentVersus(ABC):
         return None
 
     @abstractmethod
-    def is_terminal_state(self, state):
-        '''
-        RETURNS if the given state is a terminal state
-        '''
-        return False
-
-    @abstractmethod
-    def reinterpret_state_for_agent(self, state, agent_ind:int):
+    def reinterpret_state_for_agent(self, state:Hashable, agent_ind:int):
         '''
         Reinterprets the given state for the given indexed agent
         INPUT
@@ -74,17 +63,13 @@ class EnvironmentVersus(ABC):
             the state reinterpreted for the agent
         '''
         return None
-        
-    @abstractmethod
-    def render(self, state):
-        '''
-        RETURNS figure of the current state
-        '''
-        return None
-    
-    def play_game(self, first_agent_ind:int=random.randint(0, 1)):
+            
+    def play_game(self, first_agent_ind:int=-1):
         '''
         Plays the game and outputs the episode path
+        INPUT
+            first_agent_ind; integer index of the agent to make the first move
+                if -1, randomly selects an agent
         RETURNS
             episode path; list of 4-tuples, each of which has components:
                 0: state
@@ -94,11 +79,16 @@ class EnvironmentVersus(ABC):
                 The last element is the final state, given as (final_state, None, None, None)
             rewards; 2-length list of each agent's final rewards
         '''
+        # Select (default) agent
+        if first_agent_ind == -1:
+            agent_ind = random.choice(range(len(self.agents)))
+        else:
+            agent_ind = first_agent_ind
+
         # Initialize
         episode_path = []
-        individual_paths = [[][]]
-        rewards = [0, 0]
-        agent_ind = first_agent_ind
+        individual_paths = [[]] * len(self.agents)
+        rewards = [0] * len(self.agents)
         state = self.reset()
 
         # Until done, make steps and record action
@@ -108,10 +98,10 @@ class EnvironmentVersus(ABC):
             reinterpret_state = self.reinterpret_state_for_agent(state, agent_ind)
             
             # Get agent's action
-            action = self.agents[agent_ind].compute_action(reinterpret_state, agent_ind)
+            action = self.agents[agent_ind].play(reinterpret_state)
             
             # Get outcome
-            next_state, reward, done, next_agent_ind = self.step()
+            next_state, reward, done, next_agent_ind = self.step(action, agent_ind)
             episode_path.append((state, action, reward, agent_ind))
             individual_paths[agent_ind].append((self.reinterpret_state_for_agent(state, agent_ind), action, reward))
             rewards[agent_ind] += reward
@@ -138,8 +128,14 @@ class Agent(ABC):
     '''
     env = None  # the environment associated with this agent
 
+    def __init__(self):
+        '''
+        Initializes the agent
+        '''
+        pass
+
     @abstractmethod
-    def play(self, state):
+    def play(self, state:Hashable):
         '''
         INPUT
             state; the current state
@@ -156,7 +152,10 @@ class Agent(ABC):
 
     def see_history(self, history:List):
         '''
-        Processes given history
+        Does NOT have to be implemented.
+
+        Implement to learn from given history, e.g. for training.
+        
         INPUT
             history; list of 3-tuples of structure
                 0: state

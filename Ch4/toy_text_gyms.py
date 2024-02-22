@@ -1,4 +1,3 @@
-import gymnasium
 import gymnasium as gym
 from gymnasium.spaces import Tuple, Discrete, MultiDiscrete
 import matplotlib.pyplot as plt
